@@ -2,80 +2,176 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>Juego LAN</title>
+  <title>Naves VS - Inercia Espacial</title>
   <style>
-    canvas {
-      background: #f0f0f0;
-      display: block;
-      margin: 30px auto;
-      border: 2px solid #333;
+    html, body { margin: 0; overflow: hidden; background: black; font-family: monospace; color: white; }
+    #menu {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      z-index: 10; text-align: center;
     }
+    input, button {
+      font-size: 18px; margin: 5px; padding: 8px;
+    }
+    #mensaje {
+      position: absolute; top: 20px; width: 100%;
+      text-align: center; font-size: 24px; z-index: 5;
+    }
+    canvas { display: block; background: #111; }
   </style>
 </head>
 <body>
-  <canvas id="game" width="800" height="500"></canvas>
+  <div id="menu">
+    <h1>🔺 Naves VS - Inercia Espacial</h1>
+    <input type="text" id="nombre1" placeholder="Jugador 1" />
+    <input type="text" id="nombre2" placeholder="Jugador 2" />
+    <button onclick="iniciar()">¡Jugar!</button>
+  </div>
+  <canvas id="juego"></canvas>
+  <div id="mensaje"></div>
 
   <script>
-    const canvas = document.getElementById("game");
+    const canvas = document.getElementById("juego");
     const ctx = canvas.getContext("2d");
+    const mensaje = document.getElementById("mensaje");
+    let width = window.innerWidth, height = window.innerHeight;
+    canvas.width = width; canvas.height = height;
 
-    let socket = new WebSocket("ws://" + location.host);
-    let myId = null;
-    let players = {};
-
-    const myPlayer = {
-      x: Math.random() * 750,
-      y: Math.random() * 450,
-      color: '#' + Math.floor(Math.random() * 16777215).toString(16),
-      name: "Jugador"
+    window.onresize = () => {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
     };
 
-    // Al recibir datos del servidor
-    socket.addEventListener("message", (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === "init") {
-        myId = data.id;
-        players = data.players;
-        sendUpdate();
-      }
-      if (data.type === "players") {
-        players = data.players;
-      }
-    });
+    let jugadores = {};
+    let activo = false;
 
-    // Enviar estado propio al servidor
-    function sendUpdate() {
-      socket.send(JSON.stringify({
-        type: "update",
-        state: myPlayer
-      }));
+    function iniciar() {
+      const n1 = document.getElementById("nombre1").value || "Jugador 1";
+      const n2 = document.getElementById("nombre2").value || "Jugador 2";
+
+      jugadores = {
+        [n1]: {
+          x: width * 0.2, y: height / 2, ang: 0, vx: 0, vy: 0, color: "cyan",
+          balaColor: "cyan", vidas: 5, balas: [], nombre: n1,
+          keys: { up: false, left: false, right: false }, controls: { up: "w", left: "a", right: "d", fire: "f" }
+        },
+        [n2]: {
+          x: width * 0.8, y: height / 2, ang: Math.PI, vx: 0, vy: 0, color: "magenta",
+          balaColor: "magenta", vidas: 5, balas: [], nombre: n2,
+          keys: { up: false, left: false, right: false }, controls: { up: "ArrowUp", left: "ArrowLeft", right: "ArrowRight", fire: "l" }
+        }
+      };
+
+      document.getElementById("menu").style.display = "none";
+      mensaje.innerText = "";
+      activo = true;
+      loop();
     }
 
-    // Movimiento con teclas
-    document.addEventListener("keydown", (e) => {
-      const s = 10;
-      if (e.key === "ArrowUp") myPlayer.y -= s;
-      if (e.key === "ArrowDown") myPlayer.y += s;
-      if (e.key === "ArrowLeft") myPlayer.x -= s;
-      if (e.key === "ArrowRight") myPlayer.x += s;
-      sendUpdate();
+    document.addEventListener("keydown", e => {
+      Object.values(jugadores).forEach(j => {
+        if (e.key === j.controls.up) j.keys.up = true;
+        if (e.key === j.controls.left) j.keys.left = true;
+        if (e.key === j.controls.right) j.keys.right = true;
+        if (e.key === j.controls.fire) {
+          j.balas.push({ x: j.x, y: j.y, ang: j.ang, color: j.balaColor });
+        }
+      });
     });
 
-    // Dibujar jugadores
-    function drawPlayers() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (const id in players) {
-        const p = players[id];
-        ctx.fillStyle = p.color;
-        ctx.fillRect(p.x, p.y, 30, 30);
-        ctx.fillStyle = "black";
-        ctx.font = "14px Arial";
-        ctx.fillText(p.name, p.x, p.y - 6);
-      }
+    document.addEventListener("keyup", e => {
+      Object.values(jugadores).forEach(j => {
+        if (e.key === j.controls.up) j.keys.up = false;
+        if (e.key === j.controls.left) j.keys.left = false;
+        if (e.key === j.controls.right) j.keys.right = false;
+      });
+    });
+
+    function loop() {
+      if (!activo) return;
+      ctx.clearRect(0, 0, width, height);
+
+      Object.values(jugadores).forEach(j => {
+        if (j.keys.left) j.ang -= 0.06;
+        if (j.keys.right) j.ang += 0.06;
+        if (j.keys.up) {
+          j.vx += Math.cos(j.ang) * 0.3;
+          j.vy += Math.sin(j.ang) * 0.3;
+        }
+
+        // Limitar velocidad
+        const maxVel = 6;
+        const velTotal = Math.sqrt(j.vx * j.vx + j.vy * j.vy);
+        if (velTotal > maxVel) {
+          j.vx *= maxVel / velTotal;
+          j.vy *= maxVel / velTotal;
+        }
+
+        j.x += j.vx;
+        j.y += j.vy;
+
+        // Teletransporte de bordes
+        if (j.x < 0) j.x = width;
+        if (j.x > width) j.x = 0;
+        if (j.y < 0) j.y = height;
+        if (j.y > height) j.y = 0;
+
+        dibujarNave(j.x, j.y, j.ang, j.color);
+        ctx.fillStyle = "#fff";
+        ctx.fillText(`${j.nombre}: ${j.vidas} vidas`, j.x - 40, j.y - 25);
+      });
+
+      Object.values(jugadores).forEach(j => {
+        j.balas.forEach(b => {
+          b.x += Math.cos(b.ang) * 8;
+          b.y += Math.sin(b.ang) * 8;
+          ctx.fillStyle = b.color;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        j.balas = j.balas.filter(b => {
+          const enemigo = j === Object.values(jugadores)[0] ? Object.values(jugadores)[1] : Object.values(jugadores)[0];
+          if (b.x < 0 || b.x > width || b.y < 0 || b.y > height) return false;
+          if (
+            b.x > enemigo.x - 15 && b.x < enemigo.x + 15 &&
+            b.y > enemigo.y - 15 && b.y < enemigo.y + 15
+          ) {
+            enemigo.vidas -= 1;
+            if (enemigo.vidas <= 0) victoria(j.nombre);
+            return false;
+          }
+          return true;
+        });
+      });
+
+      requestAnimationFrame(loop);
     }
 
-    setInterval(drawPlayers, 40);
-    setInterval(sendUpdate, 400);
+    function dibujarNave(x, y, ang, color) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(ang);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(15, 0);
+      ctx.lineTo(-10, -10);
+      ctx.lineTo(-10, 10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function victoria(ganador) {
+      activo = false;
+      mensaje.innerText = `🎉 ¡Ha ganado el jugador "${ganador}"!`;
+      setTimeout(() => {
+        document.getElementById("menu").style.display = "block";
+        mensaje.innerText = "";
+      }, 4000);
+    }
   </script>
 </body>
 </html>

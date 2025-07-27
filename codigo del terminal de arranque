@@ -1,3 +1,0 @@
-npm init -y      # Inicializa tu proyecto
-npm install ws   # Instala WebSocket para Node.js
-node server.js   # Inicia el servidor
