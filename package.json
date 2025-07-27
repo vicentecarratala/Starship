@@ -1,6 +1,5 @@
 {
   "dependencies": {
-    "express": "^5.1.0",
     "open": "^10.2.0",
     "ws": "^8.18.3"
   }
